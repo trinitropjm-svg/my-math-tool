@@ -3,7 +3,7 @@ import google.generativeai as genai
 
 # --- [1단계] API 키 설정 ---
 # 선생님의 진짜 AIza... 키를 따옴표 안에 넣어주세요.
-API_KEY = "여기에_진짜_열쇠를_넣으세요".strip()
+API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
 
 # --- [2단계] 인공지능 연결 시도 (try-except 세트) ---
 try:
@@ -62,6 +62,7 @@ if st.sidebar.button("📊 평가 리포트 생성"):
             st.write("위 내용을 복사해서 카톡으로 보내주세요!")
     else:
         st.sidebar.warning("대화 내용이 없어요.")
+
 
 
 
