@@ -16,7 +16,7 @@ SYSTEM_INSTRUCTION = """
 """
 
 # 인공지능 모델 설정 (가장 최신 이름으로 설정했습니다)
-model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=SYSTEM_INSTRUCTION)
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 # --- [3단계] 화면 꾸미기 ---
 st.set_page_config(page_title="중등수학 도우미", page_icon="📝")
@@ -61,3 +61,4 @@ if st.sidebar.button("📊 평가 리포트 생성"):
             st.write("위 내용을 복사해서 카톡으로 보내주세요!")
     else:
         st.sidebar.warning("대화 내용이 없어요.")
+
