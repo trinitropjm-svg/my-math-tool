@@ -4,31 +4,48 @@ import random
 import os
 import re
 import json
+from datetime import datetime
 
 # =========================
 # [1] 선생님 필수 설정
 # =========================
-# ※ 주의: 여기에 선생님의 실제 API 키를 정확히 입력해 주세요.
+# ※ 주의: 여기에 선생님의 실제 API 키를 입력해 주세요.
 API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
 TEACHER_PASSWORD = "1234" 
 
-# [해결] 구글 정식 버전(v1) 엔드포인트와 가장 안정적인 모델명 사용
-MODEL_NAME = "gemini-1.5-flash"
-API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL_NAME}:generateContent?key={API_KEY}"
+# =========================
+# [2] 모델 자동 탐색 기능 (안정화 패치)
+# =========================
+@st.cache_resource
+def get_best_model(api_key):
+    """사용 가능한 최신 모델을 자동으로 찾아 반환합니다."""
+    candidates = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1/models?key={api_key}"
+        res = requests.get(url, timeout=5).json()
+        if "models" in res:
+            available = [m["name"].split("/")[-1] for m in res["models"]]
+            for cand in candidates:
+                if cand in available: return cand
+            for m in available:
+                if "flash" in m: return m
+    except: pass
+    return "gemini-1.5-flash"
+
+ACTIVE_MODEL = get_best_model(API_KEY)
+API_URL = f"https://generativelanguage.googleapis.com/v1/models/{ACTIVE_MODEL}:generateContent?key={API_KEY}"
 
 # =========================
-# [2] UI + 음성(TTS/STT) + 보안
+# [3] UI + 음성(TTS/STT) 설정
 # =========================
-st.set_page_config(page_title="중등수학 AI 감독관", layout="centered")
+st.set_page_config(page_title="AI 수학 구술감독관", layout="centered")
 
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .stDeployButton {display:none;}
-    .mic-info { color: #ff4b4b; font-size: 0.85em; font-weight: bold; }
     </style>
     <script>
-    // 1. 목소리 출력 (TTS)
     function speak(text) {
         window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance();
@@ -37,19 +54,15 @@ st.markdown("""
         msg.rate = 1.1;
         window.speechSynthesis.speak(msg);
     }
-
-    // 2. 마이크 인식 (STT)
     let recognition;
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRec();
+    if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
         recognition.lang = 'ko-KR';
         recognition.onresult = function(event) {
             const transcript = event.results[0][0].transcript;
-            alert("🎤 인식 내용: " + transcript + "\\n\\n확인 후 입력창에 적고 엔터를 쳐주세요!");
+            alert("🎤 인식 결과: " + transcript + "\\n\\n입력창에 적고 엔터를 쳐주세요!");
         };
     }
-
     function startListening() {
         if(recognition) recognition.start();
         else alert("브라우저가 음성 인식을 지원하지 않습니다.");
@@ -63,7 +76,7 @@ def tts(text: str):
     st.components.v1.html(f"<script>window.parent.speak({safe_text});</script>", height=0)
 
 # =========================
-# [3] 데이터 로더 (중1-1 ~ 중3-2 통합)
+# [4] 데이터 로더
 # =========================
 @st.cache_data
 def load_math_data():
@@ -85,71 +98,4 @@ def load_math_data():
             except: continue
     return all_data
 
-MATH_DB = load_math_data()
-
-# =========================
-# [4] AI 호출 (에러 진단 및 안전 설정 보강)
-# =========================
-def call_gemini(prompt):
-    # 안전 필터를 끄거나 낮춰서 수학적 표현이 차단되는 것을 방지
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ]
-    }
-    try:
-        r = requests.post(API_URL, json=payload, timeout=15)
-        res = r.json()
-        
-        if "error" in res:
-            return f"⚠️ API 에러: {res['error']['message']}"
-        
-        if "candidates" not in res or not res["candidates"][0].get("content"):
-            return "⚠️ AI가 적절한 답변을 생성하지 못했습니다. (차단되었을 가능성)"
-            
-        return res["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        return f"⚠️ 시스템 연결 오류: {str(e)}"
-
-# =========================
-# [5] 세션 및 화면 로직
-# =========================
-if "step" not in st.session_state: st.session_state.step = "auth"
-if "messages" not in st.session_state: st.session_state.messages = []
-if "q_idx" not in st.session_state: st.session_state.q_idx = 0
-
-# 1. 로그인
-if st.session_state.step == "auth":
-    st.title("🔒 AI 수학 구술감독관")
-    pw = st.text_input("접속 비밀번호", type="password")
-    if st.button("접속하기"):
-        if pw == TEACHER_PASSWORD:
-            st.session_state.step = "init"
-            st.rerun()
-        else:
-            st.error("비밀번호가 틀렸습니다.")
-    st.stop()
-
-# 2. 학생 이름 및 단원 설정
-if st.session_state.step == "init":
-    st.title("👨‍🏫 테스트 설정")
-    name = st.text_input("학생 이름")
-    if not MATH_DB:
-        st.error("데이터 파일을 찾을 수 없습니다. 6개 학기 파일명을 확인해 주세요.")
-        st.stop()
-    sem = st.selectbox("학기 선택", list(MATH_DB.keys()))
-    units = sorted(list(set(d["unit"] for d in MATH_DB[sem])))
-    unit = st.selectbox("소단원 선택", units)
-    
-    if st.button("테스트 시작"):
-        if name:
-            st.session_state.user_name = name
-            st.session_state.sel_unit = unit
-            qs = [d for d in MATH_DB[sem] if d["unit"] == unit]
-            random.shuffle(qs)
-            st.session_state.questions = qs[:10]
-            st.
+MATH_DB = load_
