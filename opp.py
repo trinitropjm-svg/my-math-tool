@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 
 # 1. 인공지능 설정 (이 부분은 학생들에게 절대 보이지 않습니다)
-API_KEY = st.secrets["GOOGLE_API_KEY"]
+API_KEY = st.secrets["gen-lang-client-0165172623"]
 genai.configure(api_key=API_KEY)
 
 # 선생님의 비밀 지시서 (보안 사항)
@@ -49,3 +49,4 @@ if st.sidebar.button("📋 평가 리포트 생성"):
     st.sidebar.code(report_response.text)
 
     st.sidebar.write("위 박스 우측 상단의 버튼을 눌러 복사한 후, 카톡으로 보내주세요!")
+
