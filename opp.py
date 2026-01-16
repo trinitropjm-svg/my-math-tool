@@ -13,7 +13,7 @@ TEACHER_PASSWORD = "1234"  # 접속 비밀번호
 # --- [2] UI 보안 및 음성 지원(TTS) 설정 ---
 st.set_page_config(page_title="중등수학 AI 감독관", layout="centered")
 
-# 메뉴 숨기기 및 한국어 TTS 스크립트 (백슬래시 에러 방지를 위해 문자열 구조 최적화)
+# 메뉴 숨기기 및 한국어 TTS 스크립트
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
@@ -44,17 +44,16 @@ def load_math_data():
                 with open(file_path, "r", encoding="utf-8") as f:
                     parsed_qs = []
                     for line in f:
-                        # [에러 해결]: 백슬래시 문법 에러를 유발하는 re.sub 대신 
-                        # 가장 안전한 .replace() 함수를 사용했습니다.
+                        # [에러 해결]: 문제가 된 역슬래시 처리 코드를 완전히 안전한 방식으로 교체
                         line = line.strip().replace("\\", "")
                         
                         if not line or "소단원명" in line:
                             continue
                         
-                        # 형태의 태그 제거 (안전한 정규식)
+                        # 형태의 태그 제거
                         line = re.sub(r"\", "", line)
                         
-                        # 탭(\t)으로 구분된 데이터 분리
+                        # 탭(\t)으로 단원, 질문, 정답 분해
                         parts = line.split("\t")
                         if len(parts) >= 3:
                             parsed_qs.append({
@@ -95,7 +94,7 @@ if st.session_state.step == "init":
     st.session_state.user_name = st.text_input("학생 이름을 입력해주세요:")
     
     if not MATH_DB:
-        st.error("데이터 파일(.txt)을 찾을 수 없습니다. 6개 파일이 깃허브에 있는지 확인해주세요.")
+        st.error("데이터 파일(.txt)을 찾을 수 없습니다. 파일이 깃허브에 있는지 확인해주세요.")
         st.stop()
         
     st.session_state.sel_sem = st.selectbox("학기 선택", list(MATH_DB.keys()))
@@ -130,7 +129,7 @@ if prompt := st.chat_input("답변을 입력하세요 (끝내려면 '그만' 입
         st.session_state.step = "report"
         st.rerun()
 
-    # 인공지능 지시사항 (선생님 프롬프트 원칙 100% 반영)
+    # 인공지능 지시사항 (선생님 프롬프트 원칙 반영)
     instruction = f"""
     너는 다정하고 전문적인 '수학 선생님'이야. 
     로봇 말투 금지: "질문을 시작합니다" 등 기계적인 멘트 금지.
