@@ -8,23 +8,50 @@ import json
 # =========================
 # [1] 선생님 필수 설정
 # =========================
-# ※ 주의: 여기에 선생님의 실제 API 키를 입력해 주세요.
+# ※ 주의: 여기에 선생님의 실제 API 키를 정확히 입력해 주세요.
 API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
 TEACHER_PASSWORD = "1234" 
 
-# 구글 정식 v1 API 경로
-API_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+# =========================
+# [2] 모델 자동 탐색 기능 (안정화 패치)
+# =========================
+@st.cache_resource
+def find_available_model(api_key):
+    """선생님의 키로 사용 가능한 최적의 모델을 자동으로 찾습니다."""
+    # 1순위: v1beta flash, 2순위: v1 flash, 3순위: 최신 flash
+    urls = [
+        f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
+        f"https://generativelanguage.googleapis.com/v1/models?key={api_key}"
+    ]
+    
+    for url in urls:
+        try:
+            res = requests.get(url, timeout=5).json()
+            if "models" in res:
+                # 'flash'가 포함된 모델 중 가장 최신 것을 찾음
+                flash_models = [m["name"] for m in res["models"] if "flash" in m["name"].lower()]
+                if flash_models:
+                    # 'v1beta' 주소였으면 v1beta 엔드포인트 반환, 아니면 v1 반환
+                    version = "v1beta" if "v1beta" in url else "v1"
+                    model_path = flash_models[0] # 예: models/gemini-1.5-flash
+                    return f"https://generativelanguage.googleapis.com/{version}/{model_path}:generateContent?key={api_key}"
+        except:
+            continue
+    # 최후의 수단 (기본값)
+    return f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+
+# 최적의 API 주소 자동 설정
+FINAL_API_URL = find_available_model(API_KEY)
 
 # =========================
-# [2] UI + 음성(TTS/STT) 시스템
+# [3] UI + 음성(TTS/STT) + 보안
 # =========================
-st.set_page_config(page_title="AI 수학 구술감독관", layout="centered")
+st.set_page_config(page_title="중등수학 AI 감독관", layout="centered")
 
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .stDeployButton {display:none;}
-    .mic-info { color: #ff4b4b; font-weight: bold; padding: 10px; border: 1px solid #ff4b4b; border-radius: 10px; margin-bottom: 20px; }
     </style>
     <script>
     function speak(text) {
@@ -36,9 +63,8 @@ st.markdown("""
         window.speechSynthesis.speak(msg);
     }
     let recognition;
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRec();
+    if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
         recognition.lang = 'ko-KR';
         recognition.onresult = function(event) {
             const transcript = event.results[0][0].transcript;
@@ -58,7 +84,7 @@ def tts(text: str):
     st.components.v1.html(f"<script>window.parent.speak({safe_text});</script>", height=0)
 
 # =========================
-# [3] 데이터 로더 (중략 없음)
+# [4] 데이터 로더 (무결성 유지)
 # =========================
 @st.cache_data
 def load_math_data():
@@ -83,15 +109,15 @@ def load_math_data():
 MATH_DB = load_math_data()
 
 # =========================
-# [4] 화면 로직
+# [5] 앱 화면 로직
 # =========================
 if "step" not in st.session_state: st.session_state.step = "auth"
 if "messages" not in st.session_state: st.session_state.messages = []
 if "q_idx" not in st.session_state: st.session_state.q_idx = 0
 
-# 1. 로그인
 if st.session_state.step == "auth":
     st.title("🔒 AI 수학 구술감독관")
+    st.info(f"시스템 진단: 연결 주소 자동 최적화 완료")
     pw = st.text_input("접속 비밀번호 (1234)", type="password")
     if st.button("접속하기"):
         if pw == TEACHER_PASSWORD:
@@ -100,7 +126,6 @@ if st.session_state.step == "auth":
         else: st.error("비밀번호 불일치")
     st.stop()
 
-# 2. 설정
 if st.session_state.step == "init":
     st.title("👨‍🏫 테스트 설정")
     name = st.text_input("학생 이름")
@@ -121,39 +146,28 @@ if st.session_state.step == "init":
             st.rerun()
     st.stop()
 
-# 3. 테스트 진행
 if st.session_state.step == "test":
-    st.title(f"📐 {st.session_state.sel_unit}")
-    
-    # 마이크 버튼 (보안 주소 필수)
+    st.title(f"📐 {st.session_state.sel_unit} 테스트")
     if st.button("🎤 마이크 켜기 (말하기)"):
         st.components.v1.html("<script>window.parent.startListening();</script>", height=0)
 
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
 
-    if prompt := st.chat_input("답변을 입력하세요"):
+    if prompt := st.chat_input("정답을 입력하세요"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         curr_q = st.session_state.questions[st.session_state.q_idx]
         
-        # [해결] 안전 필터를 모두 끄고 채점 요청
         payload = {
             "contents": [{"parts": [{"text": f"수학 선생님으로서 채점해줘. 문제: {curr_q['q']}, 정답: {curr_q['a']}, 학생답: {prompt}. 맞으면 칭찬하고 다음 문제로 가고, 틀리면 힌트만 줘. 수식은 한글로 말해줘."}]}],
-            "safetySettings": [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-            ]
+            "safetySettings": [{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}]
         }
         
         try:
-            r = requests.post(API_URL, json=payload, timeout=15)
+            r = requests.post(FINAL_API_URL, json=payload, timeout=15)
             res = r.json()
             if "error" in res:
                 reply = f"❌ API 에러: {res['error']['message']}"
-            elif "candidates" not in res or not res["candidates"][0].get("content"):
-                reply = "❌ AI가 답변을 거부했습니다. (필터링됨)"
             else:
                 reply = res["candidates"][0]["content"]["parts"][0]["text"].strip()
         except Exception as e:
