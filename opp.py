@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 
 # --- [1단계] API 키 설정 (선생님의 진짜 키를 넣어주세요) ---
-API_KEY = "여기에_AIza로_시작하는_진짜_키를_넣으세요"
+API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0"
 
 try:
     genai.configure(api_key=API_KEY)
@@ -82,6 +82,7 @@ if st.sidebar.button("📊 평가 리포트 생성"):
             st.write("위 내용을 복사해서 카톡으로 보내주세요!")
     else:
         st.sidebar.warning("대화 내용이 없어요.")
+
 
 
 
