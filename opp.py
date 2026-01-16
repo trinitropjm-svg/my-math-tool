@@ -11,19 +11,20 @@ import json
 API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
 TEACHER_PASSWORD = "1234" 
 
-# 구글 정식 버전(v1) API 경로로 수정
-API_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+# 구글 API 호출 경로 수정 (가장 안정적인 v1beta 및 모델 경로 명시)
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
 
 # =========================
 # [2] UI 및 음성(TTS/STT) 시스템
 # =========================
 st.set_page_config(page_title="AI 수학 감독관", layout="centered")
 
-# CSS 및 JavaScript (마이크 + 음성 출력 통합)
+# 마이크 권한 안내 및 기능 스크립트
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .stDeployButton {display:none;}
+    .mic-info { color: #ff4b4b; font-size: 0.9em; margin-bottom: 10px; }
     </style>
     <script>
     // 1. 목소리 출력 (TTS)
@@ -38,13 +39,16 @@ st.markdown("""
 
     // 2. 마이크 인식 (STT)
     let recognition;
-    if ('webkitSpeechRecognition' in window) {
-        recognition = new webkitSpeechRecognition();
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
         recognition.lang = 'ko-KR';
         recognition.onresult = function(event) {
             const transcript = event.results[0][0].transcript;
-            // 인식된 결과를 브라우저 알림으로 보여주고 입력창 입력을 유도
-            alert("🎤 인식 결과: " + transcript + "\\n\\n이 내용을 입력창에 적고 엔터를 쳐주세요!");
+            alert("🎤 인식된 내용: " + transcript + "\\n\\n확인을 누르신 후 아래 입력창에 내용을 적고 엔터를 쳐주세요!");
+        };
+        recognition.onerror = function(e) {
+            alert("마이크 에러: " + e.error + "\\n주소창 왼쪽의 자물쇠 아이콘을 눌러 마이크 권한을 허용해 주세요.");
         };
     }
 
@@ -74,7 +78,6 @@ def load_math_data():
                 with open(file_path, "r", encoding="utf-8") as f:
                     parsed = []
                     for line in f:
-                        # 슬래시 제거 및 탭 분리
                         clean_line = line.strip().replace("\\", "")
                         if not clean_line or "소단원명" in clean_line: continue
                         parts = clean_line.split("\t")
@@ -87,7 +90,7 @@ def load_math_data():
 MATH_DB = load_math_data()
 
 # =========================
-# [4] AI 호출 함수 (v1 정식 버전용)
+# [4] AI 호출 함수 (경로 최적화)
 # =========================
 def call_gemini(prompt):
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -95,7 +98,7 @@ def call_gemini(prompt):
         r = requests.post(API_URL, json=payload, timeout=20)
         res = r.json()
         if "error" in res:
-            return f"⚠️ API 에러: {res['error']['message']}"
+            return f"⚠️ API 에러: {res['error']['message']}\\n(상세: {res['error'].get('status')})"
         return res["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         return f"⚠️ 연결 오류: {str(e)}"
@@ -119,7 +122,7 @@ if st.session_state.step == "auth":
             st.error("비밀번호가 틀렸습니다.")
     st.stop()
 
-# 2. 학생 이름 및 단원 설정
+# 2. 학생 설정
 if st.session_state.step == "init":
     st.title("👨‍🏫 테스트 설정")
     name = st.text_input("학생 이름")
@@ -138,35 +141,27 @@ if st.session_state.step == "init":
             random.shuffle(qs)
             st.session_state.questions = qs[:10]
             st.session_state.step = "test"
-            
             msg = f"안녕 {name}! {unit} 테스트를 시작할게. Q1. {st.session_state.questions[0]['q']}"
             st.session_state.messages.append({"role": "assistant", "content": msg})
             st.rerun()
 
-# 3. 메인 시험 화면 (여기서부터 st.stop() 없이 흘러가야 함)
+# 3. 테스트 진행
 if st.session_state.step == "test":
-    st.title(f"📐 {st.session_state.sel_unit} 테스트")
+    st.title(f"📐 {st.session_state.sel_unit}")
 
-    if st.button("🎤 마이크 켜기 (말하기)"):
+    st.markdown('<p class="mic-info">※ 마이크 사용 시 브라우저 상단의 마이크 권한을 꼭 허용해 주세요.</p>', unsafe_allow_html=True)
+    if st.button("🎤 마이크 켜기 (말하기 시작)"):
         st.components.v1.html("<script>window.parent.startListening();</script>", height=0)
 
-    # 대화창 렌더링
     for m in st.session_state.messages:
         with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
-    # 입력창
     if prompt := st.chat_input("정답을 입력하세요"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         curr_q = st.session_state.questions[st.session_state.q_idx]
-        ai_prompt = f"""
-        너는 다정한 수학 선생님이야.
-        문제: {curr_q['q']}
-        정답: {curr_q['a']}
-        학생의 답: {prompt}
-        채점해주고, 틀리면 힌트를 줘. 수식은 한글로 ('루트 2' 등) 말해줘.
-        """
+        ai_prompt = f"수학 선생님으로서 채점해줘. 문제: {curr_q['q']}, 정답: {curr_q['a']}, 학생답: {prompt}. 맞으면 칭찬하고 다음 문제로 가자고 하고, 틀리면 힌트를 줘. 수식은 한글로 말해줘."
         
         with st.spinner("AI 선생님 채점 중..."):
             reply = call_gemini(ai_prompt)
@@ -174,11 +169,10 @@ if st.session_state.step == "test":
         st.session_state.messages.append({"role": "assistant", "content": reply})
         tts(reply)
         
-        # 정답 판정 시 다음 문제로
-        if "정답" in reply[:20] or "맞았" in reply:
+        if "정답" in reply[:25] or "맞았" in reply:
             st.session_state.q_idx += 1
             if st.session_state.q_idx < len(st.session_state.questions):
-                next_msg = f"자, 다음 문제! Q{st.session_state.q_idx + 1}. {st.session_state.questions[st.session_state.q_idx]['q']}"
-                st.session_state.messages.append({"role": "assistant", "content": next_msg})
+                next_q = f"자, 다음 문제! Q{st.session_state.q_idx + 1}. {st.session_state.questions[st.session_state.q_idx]['q']}"
+                st.session_state.messages.append({"role": "assistant", "content": next_q})
         
         st.rerun()
