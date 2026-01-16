@@ -20,8 +20,6 @@ API_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash
 # =========================
 st.set_page_config(page_title="중등수학 AI 감독관", layout="centered")
 
-[Image of API endpoint structure showing the difference between v1 and v1beta]
-
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
@@ -47,7 +45,6 @@ st.markdown("""
         recognition.lang = 'ko-KR';
         recognition.onresult = function(event) {
             const transcript = event.results[0][0].transcript;
-            // 인식 결과를 알림창으로 띄워 확인 시킵니다.
             alert("🎤 인식 내용: " + transcript + "\\n\\n확인 후 입력창에 적고 엔터를 쳐주세요!");
         };
         recognition.onerror = function(e) {
@@ -104,7 +101,6 @@ def call_gemini(prompt):
         r = requests.post(API_URL, json=payload, timeout=20)
         res = r.json()
         if "error" in res:
-            # 모델이 없을 경우 대비하여 상세 에러 메시지 출력
             return f"⚠️ API 에러: {res['error']['message']} (상세: {res['error'].get('status')})"
         return res["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
@@ -157,8 +153,6 @@ if st.session_state.step == "init":
 if st.session_state.step == "test":
     st.title(f"📐 {st.session_state.sel_unit}")
 
-    [Image of browser microphone permission prompt showing where to click 'Allow']
-
     st.markdown('<p class="mic-info">🎤 마이크 사용 시 주소창 왼쪽 자물쇠 아이콘을 눌러 "허용"을 확인하세요.</p>', unsafe_allow_html=True)
     if st.button("🎤 마이크 켜기 (말하기 시작)"):
         st.components.v1.html("<script>window.parent.startListening();</script>", height=0)
@@ -171,4 +165,19 @@ if st.session_state.step == "test":
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         curr_q = st.session_state.questions[st.session_state.q_idx]
-        ai_prompt = f"수학 선생님으로서 채점해줘. 문제: {curr_q['q']}, 정답
+        ai_prompt = f"수학 선생님으로서 채점해줘. 문제: {curr_q['q']}, 정답: {curr_q['a']}, 학생답: {prompt}. 맞으면 칭찬하고 다음 문제로 가자고 하고, 틀리면 힌트를 줘. 수식은 한글로 말해줘."
+        
+        with st.spinner("AI 선생님 확인 중..."):
+            reply = call_gemini(ai_prompt)
+            
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+        tts(reply)
+        
+        # 정답 판정 (맞았을 경우 다음 문제 준비)
+        if "정답" in reply[:25] or "맞았" in reply:
+            st.session_state.q_idx += 1
+            if st.session_state.q_idx < len(st.session_state.questions):
+                next_q = f"자, 다음 문제! Q{st.session_state.q_idx + 1}. {st.session_state.questions[st.session_state.q_idx]['q']}"
+                st.session_state.messages.append({"role": "assistant", "content": next_q})
+        
+        st.rerun()
