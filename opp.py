@@ -3,15 +3,17 @@ import requests
 import random
 import os
 import re
+import json
 
 # --- [1] 선생님 필수 설정 ---
-# 선생님의 진짜 API 키를 따옴표 안에 넣어주세요.
+# 선생님의 API 키를 아래 따옴표 안에 넣어주세요.
 API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
-TEACHER_PASSWORD = "1234"  # 학원용 접속 비밀번호
+TEACHER_PASSWORD = "1234"  # 학원에서 사용할 시스템 비밀번호
 
-# --- [2] UI 보안 잠금 및 음성 지원 설정 ---
-st.set_page_config(page_title="중등수학 AI 감독관", layout="centered")
+# --- [2] UI 보안 및 음성 지원 설정 ---
+st.set_page_config(page_title="중등수학 AI 구술감독관", layout="centered")
 
+# 메뉴 숨기기 및 한국어 음성(TTS) 스크립트
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
@@ -19,8 +21,7 @@ st.markdown("""
     </style>
     <script>
     function speak(text) {
-        // 이전 음성이 나오고 있다면 중지
-        window.speechSynthesis.cancel();
+        window.speechSynthesis.cancel(); // 이전 음성 중단
         const msg = new SpeechSynthesisUtterance();
         msg.text = text;
         msg.lang = 'ko-KR';
@@ -30,111 +31,96 @@ st.markdown("""
     </script>
     """, unsafe_allow_html=True)
 
-# --- [3] 데이터 로더: 텍스트 파일을 읽어 6개 학기 통합 ---
+# --- [3] 데이터 로더: 6개 학기 텍스트 파일 통합 읽기 ---
 @st.cache_data
-def load_all_data():
-    all_data = {}
-    semesters = ["중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2"]
+def load_math_data():
+    all_semesters = {}
+    files = ["중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2"]
     
-    for sem in semesters:
-        file_path = f"{sem}수학.txt"
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
-                    parsed_questions = []
-                    for line in lines:
-                        # [문제의 44라인 수정]: 소스 표시 제거
-                        # r"\" 라고 정확히 써야 에러가 안 납니다.
-                        clean_line = re.sub(r"\", "", line).strip()
-                        
-                        if not clean_line or "소단원명" in clean_line:
-                            continue
-                        
-                        parts = clean_line.split("\t")
-                        if len(parts) >= 3:
-                            parsed_questions.append({
-                                "unit": parts[0].strip(),
-                                "q": parts[1].strip(),
-                                "a": parts[2].strip()
-                            })
-                    if parsed_questions:
-                        all_data[sem] = parsed_questions
-            except Exception as e:
-                st.error(f"{file_path} 읽기 오류: {e}")
-    return all_data
+    for sem in files:
+        fname = f"{sem}수학.txt"
+        if os.path.exists(fname):
+            with open(fname, "r", encoding="utf-8") as f:
+                content = f.readlines()
+                questions = []
+                for line in content:
+                    # [에러 해결 지점]: 정규표현식으로 태그 제거
+                    line = re.sub(r"\", "", line).strip()
+                    if not line or "소단원명" in line: continue
+                    
+                    parts = line.split("\t")
+                    if len(parts) >= 3:
+                        questions.append({"unit": parts[0].strip(), "q": parts[1].strip(), "a": parts[2].strip()})
+                if questions: all_semesters[sem] = questions
+    return all_semesters
 
-ALL_MATH_DATA = load_all_data()
+MATH_DB = load_math_data()
 
-# --- [4] 시스템 상태 관리 ---
+# --- [4] 앱 상태 관리 ---
 if "step" not in st.session_state: st.session_state.step = "auth"
 if "messages" not in st.session_state: st.session_state.messages = []
-if "q_count" not in st.session_state: st.session_state.q_count = 0
+if "q_idx" not in st.session_state: st.session_state.q_idx = 0
 
 # --- [5] 화면 로직 ---
 
-# [1단계: 비밀번호 잠금]
+# [1단계: 접속 잠금]
 if st.session_state.step == "auth":
     st.title("🔒 AI 구술 시험 시스템")
-    pw = st.text_input("수업 비밀번호를 입력하세요", type="password")
-    if st.button("시스템 접속"):
-        if pw == TEACHER_PASSWORD:
+    if st.text_input("비밀번호", type="password") == TEACHER_PASSWORD:
+        if st.button("시스템 접속"):
             st.session_state.step = "init"
             st.rerun()
-        else:
-            st.error("비밀번호가 틀렸습니다.")
     st.stop()
 
-# [2단계: 학생 이름 및 단원 선택]
+# [2단계: 학생 정보 및 단원 선택]
 if st.session_state.step == "init":
-    st.subheader("👨‍🏫 테스트 설정")
-    st.session_state.user_name = st.text_input("학생 이름을 입력해주세요:")
+    st.title("👨‍🏫 테스트 설정")
+    st.session_state.user_name = st.text_input("학생 이름을 입력하세요")
+    st.session_state.sel_sem = st.selectbox("학기 선택", list(MATH_DB.keys()))
     
-    if not ALL_MATH_DATA:
-        st.error("학습 데이터(.txt) 파일을 찾을 수 없습니다. 깃허브에 파일이 있는지 확인해 주세요.")
-        st.stop()
-        
-    st.session_state.cur_sem = st.selectbox("학기 선택", list(ALL_MATH_DATA.keys()))
-    
-    units = sorted(list(set([d["unit"] for d in ALL_MATH_DATA[st.session_state.cur_sem]])))
-    st.session_state.cur_unit = st.selectbox("소단원 선택", units)
+    units = sorted(list(set([d["unit"] for d in MATH_DB[st.session_state.sel_sem]])))
+    st.session_state.sel_unit = st.selectbox("단원 선택", units)
     
     if st.button("테스트 시작"):
-        st.session_state.step = "test"
-        st.session_state.questions = [d for d in ALL_MATH_DATA[st.session_state.cur_sem] if d["unit"] == st.session_state.cur_unit]
+        st.session_state.questions = [d for d in MATH_DB[st.session_state.sel_sem] if d["unit"] == st.session_state.sel_unit]
         random.shuffle(st.session_state.questions)
+        st.session_state.step = "test"
         
-        welcome_msg = f"안녕하세요 {st.session_state.user_name} 학생! {st.session_state.cur_sem} 수학 테스트입니다. {st.session_state.cur_unit} 단원을 얼마나 잘 알고 있는지 확인해 볼게. 준비됐니?"
-        st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
+        # 시작 멘트
+        start_msg = f"안녕하세요 중1수학 1학기 테스트입니다. 학생 이름과 소단원을 말씀해주세요. 화면에 나오는 단원 중 오늘 공부한 {st.session_state.sel_unit} 단원 이름을 말해줘!"
+        st.session_state.messages.append({"role": "assistant", "content": start_msg})
         st.rerun()
     st.stop()
 
-# [3단계: 메인 구술 테스트]
-st.title(f"📐 {st.session_state.cur_unit} 구술 시험")
+# [3단계: 구술 시험 및 음성 지원]
+st.title(f"📐 {st.session_state.sel_unit} 테스트")
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]): st.markdown(m["content"])
 
-if prompt := st.chat_input("답변을 입력하세요 (그만하려면 '그만')"):
+if prompt := st.chat_input("답변을 입력하세요"):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with st.chat_message("user"): st.markdown(prompt)
 
-    if prompt == "그만" or st.session_state.q_count >= 20:
+    if prompt == "그만" or st.session_state.q_idx >= 20:
         st.session_state.step = "report"
         st.rerun()
 
-    # 인공지능 지시사항 (선생님 프롬프트)
-    system_instruction = f"""
-    너는 다정하고 전문적인 '수학 선생님'이야.
-    - 학생 이름: {st.session_state.user_name}
-    - 질문 데이터: {st.session_state.questions}
-    - 규칙: 로봇 말투 금지, 수식은 한글로('루트 2' 등), 틀리면 힌트 2번 주기.
+    # AI 지시사항 조합
+    instruction = f"""
+    너는 다정한 '수학 선생님'이자 '구술 시험 감독관'이야. 
+    학생: {st.session_state.user_name} / 단원: {st.session_state.sel_unit}
+    참고 문제: {json.dumps(st.session_state.questions, ensure_ascii=False)}
+
+    [원칙]
+    1. 로봇 말투 금지 ("질문을 시작합니다" 등 금지)
+    2. 의학적 자문 멘트 절대 금지
+    3. 수식은 반드시 'x의 제곱', '2분의 1'처럼 한글로만 말하기
+    4. 정답이면 칭찬, 틀리면 힌트 최대 2번 주기
     """
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
-    payload = {"contents": [{"parts": [{"text": f"{system_instruction}\n학생 답변: {prompt}"}]}]}
+    payload = {"contents": [{"parts": [{"text": f"{instruction}\n\n학생 답변: {prompt}"}]}]}
     
     try:
         res = requests.post(url, json=payload).json()
@@ -143,19 +129,17 @@ if prompt := st.chat_input("답변을 입력하세요 (그만하려면 '그만')
         with st.chat_message("assistant"):
             st.markdown(ai_reply)
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
-            st.session_state.q_count += 1
-            # 음성 출력 (따옴표 에러 방지 처리)
-            safe_reply = ai_reply.replace("'", "").replace("\n", " ")
-            st.components.v1.html(f"<script>window.parent.speak('{safe_reply}');</script>", height=0)
+            # 음성 출력 (자바스크립트 호출)
+            safe_text = ai_reply.replace("'", "").replace("\n", " ")
+            st.components.v1.html(f"<script>window.parent.speak('{safe_text}');</script>", height=0)
     except:
-        st.error("AI 선생님과 연결이 잠시 끊겼습니다. 다시 시도해 주세요.")
+        st.error("AI 선생님이 잠시 생각 중이에요. 다시 입력해 주세요.")
 
-# [4단계: 리포트 생성]
+# [4단계: 리포트]
 if st.session_state.step == "report":
-    st.balloons()
     st.subheader("📋 학습 리포트")
-    st.write(f"- **학생 이름**: {st.session_state.user_name}")
-    st.write(f"- **학습 단원**: {st.session_state.cur_sem} {st.session_state.cur_unit}")
-    st.info("오늘 테스트 받느라 수고했어! 선생님께 이 화면을 보여드리면 돼.")
-
-
+    st.write(f"- 학생: {st.session_state.user_name} / 단원: {st.session_state.sel_unit}")
+    st.info("리포트는 읽지 않고 여기서 마칩니다. 수고했어!")
+    if st.button("처음으로"):
+        st.session_state.clear()
+        st.rerun()
