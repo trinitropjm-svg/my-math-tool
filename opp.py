@@ -7,7 +7,8 @@ API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0"
 try:
     genai.configure(api_key=API_KEY)
     # 모델 이름을 가장 기본형인 'gemini-1.5-flash'로 설정합니다.
-    model = genai.GenerativeModel('gemini-1.5-flash')
+   # 'models/'를 빼고 이름만 적어주는 것이 현재 버전에서 더 정확할 수 있습니다.
+model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"설정 단계 에러: {e}")
 
@@ -82,6 +83,7 @@ if st.sidebar.button("📊 평가 리포트 생성"):
             st.write("위 내용을 복사해서 카톡으로 보내주세요!")
     else:
         st.sidebar.warning("대화 내용이 없어요.")
+
 
 
 
