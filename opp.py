@@ -8,7 +8,7 @@ import json
 # =========================
 # [1] 보안 설정 (Secrets 사용)
 # =========================
-API_KEY = st.secrets.get("GOOGLE_API_KEY", "").strip()
+API_KEY = "AIzaSyChQxUSqXF6jJ7fDpESBXl4gW9wdp86Waw".strip()
 TEACHER_PASSWORD = "1234" 
 
 # =========================
@@ -172,3 +172,4 @@ if st.session_state.step == "test":
                 next_q = f"자, 다음 문제! Q{st.session_state.q_idx+1}. {st.session_state.questions[st.session_state.q_idx]['q']}"
                 st.session_state.messages.append({"role": "assistant", "content": next_q})
         st.rerun()
+
