@@ -8,12 +8,12 @@ import json
 # --- [1] 선생님 필수 설정 ---
 # 선생님의 API 키를 아래 따옴표 안에 넣어주세요.
 API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
-TEACHER_PASSWORD = "1234"  # 학원에서 아이들이 접속할 때 사용할 비밀번호
+TEACHER_PASSWORD = "1234"  # 학원 접속용 비밀번호
 
 # --- [2] UI 보안 잠금 및 한국어 음성(TTS) 설정 ---
-st.set_page_config(page_title="중등수학 AI 구술감독관", layout="centered")
+st.set_page_config(page_title="중등수학 AI 감독관", layout="centered")
 
-# 메뉴를 숨기고 브라우저 내장 음성을 사용하는 스크립트
+# 메뉴 숨기기 및 브라우저 내장 음성을 사용하는 스크립트
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
@@ -31,10 +31,11 @@ st.markdown("""
     </script>
     """, unsafe_allow_html=True)
 
-# --- [3] 데이터 로더: 6개 학기 텍스트 파일(Tab 구분) 통합 읽기 ---
+# --- [3] 데이터 로더: 6개 학기 텍스트 파일 통합 읽기 ---
 @st.cache_data
 def load_all_math_data():
     all_data = {}
+    # 선생님이 업로드하신 6개 파일 이름
     semesters = ["중1-1", "중1-2", "중2-1", "중2-2", "중3-1", "중3-2"]
     
     for sem in semesters:
@@ -45,12 +46,12 @@ def load_all_math_data():
                     lines = f.readlines()
                     parsed_qs = []
                     for line in lines:
-                        # [안전한 교정]: 에러를 일으키던 역슬래시 제거 대신 탭 분할 사용
                         line = line.strip()
                         if not line or "소단원명" in line:
                             continue
                         
-                        # 불필요한 태그 제거
+                        # [에러 해결]: 역슬래시 에러를 일으키던 코드를 삭제하고 안전한 정규식만 사용
+                        # 불필요한 태그를 제거합니다.
                         line = re.sub(r"\", "", line)
                         
                         # 탭(\t)으로 단원, 질문, 정답 분리
@@ -76,7 +77,7 @@ if "q_idx" not in st.session_state: st.session_state.q_idx = 1
 
 # --- [5] 화면 로직 ---
 
-# [1단계: 접속 비밀번호 잠금]
+# 1단계: 접속 비밀번호 잠금
 if st.session_state.step == "auth":
     st.title("🔒 AI 구술 시험 시스템")
     pw_input = st.text_input("학원 비밀번호를 입력하세요", type="password")
@@ -88,7 +89,7 @@ if st.session_state.step == "auth":
             st.error("비밀번호가 틀렸습니다.")
     st.stop()
 
-# [2단계: 학생 이름 및 학기/단원 선택]
+# 2단계: 학생 이름 및 학기/단원 선택
 if st.session_state.step == "init":
     st.title("👨‍🏫 테스트 설정")
     st.session_state.user_name = st.text_input("학생 이름을 입력해주세요:")
@@ -109,20 +110,20 @@ if st.session_state.step == "init":
         random.shuffle(st.session_state.questions)
         st.session_state.step = "test"
         
-        # 시작 인사 (지시사항 원칙 100% 반영)
-        intro = f"안녕하세요 {st.session_state.user_name} 학생! 중학수학 {st.session_state.sel_sem} 테스트입니다. 오늘 공부한 {st.session_state.sel_unit} 단원의 구술 시험을 시작할게. 준비됐니?"
+        # 시작 인사 (지시사항 원칙 반영)
+        intro = f"안녕하세요 중1수학 1학기 테스트입니다. 학생 이름과 소단원을 말씀해주세요. 화면에 나오는 단원 중 오늘 공부한 {st.session_state.sel_unit} 단원 이름을 말해줘!"
         st.session_state.messages.append({"role": "assistant", "content": intro})
         st.rerun()
     st.stop()
 
-# [3단계: 메인 구술 시험 및 음성 출력]
+# 3단계: 메인 구술 시험 및 음성 출력
 st.title(f"📐 {st.session_state.sel_unit} 테스트")
 
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-if prompt := st.chat_input("답변을 입력하세요 (끝내려면 '그만')"):
+if prompt := st.chat_input("답변을 입력하세요 (끝내려면 '그만' 입력)"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -131,18 +132,20 @@ if prompt := st.chat_input("답변을 입력하세요 (끝내려면 '그만')"):
         st.session_state.step = "report"
         st.rerun()
 
-    # AI 지시사항 (선생님의 프롬프트 원칙 반영)
+    # 인공지능 지시사항 (선생님의 프롬프트 원칙 반영)
     instruction = f"""
     너는 다정하고 전문적인 '수학 선생님'이자 '구술 시험 감독관'이야.
     - 학생: {st.session_state.user_name}
     - 데이터: {json.dumps(st.session_state.questions, ensure_ascii=False)}
 
-    [원칙]
-    1. 로봇 말투 절대 금지 ("질문을 시작합니다" 등 하지 말 것)
-    2. 수식은 반드시 한글로 ('x의 제곱', '2분의 1', '루트 3') 말하기
-    3. 정답이면 크게 칭찬하고 다음 질문(Q{st.session_state.q_idx}. 형식) 하기
-    4. 틀리면 힌트를 최대 2번 주어 스스로 답하게 유도하기
-    5. 의학적 자문 등 경고 문구는 절대 하지 말 것
+    [상호작용 원칙]
+    1. 로봇 말투 절대 금지 ("질문을 시작합니다", "다시 말할게요" 등 금지)
+    2. "참고용으로만 사용하시기 바랍니다..."와 같은 의학/전문 자문 멘트 절대 금지
+    3. 수식은 반드시 'x의 제곱', '2분의 1', '루트 3'처럼 한글로만 풀어서 말하기
+    4. 정답이면 크게 칭찬하고 다음 질문(Q{st.session_state.q_idx}. 형식) 하기
+    5. 틀리면 바로 정답을 주지 말고 힌트를 최대 2번 주어 스스로 답하게 유도하기
+    6. 니가 한 말은 절대 반복하지 말고 계속 진행한다.
+    7. 학생이 답을 수정하면 "네 알겠습니다"라고 답하며 배려한다.
     """
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
@@ -160,16 +163,17 @@ if prompt := st.chat_input("답변을 입력하세요 (끝내려면 '그만')"):
             safe_text = ai_reply.replace("'", "").replace('"', "").replace("\n", " ")
             st.components.v1.html(f"<script>window.parent.speak('{safe_text}');</script>", height=0)
     except:
-        st.error("AI 선생님이 잠시 자리를 비우셨어요. 다시 입력해 주세요.")
+        st.error("AI 선생님과 연결이 잠시 불안정합니다. 다시 입력해 주세요.")
 
-# [4단계: 리포트]
+# 4단계: 리포트 생성
 if st.session_state.step == "report":
     st.balloons()
     st.subheader("📋 학습 리포트")
-    st.write(f"- 학생: {st.session_state.user_name}")
-    st.write(f"- 범위: {st.session_state.sel_sem} {st.session_state.sel_unit}")
-    st.info("리포트는 읽지 않고 마칩니다. 선생님께 이 화면을 보여주세요!")
-    if st.button("처음으로"):
+    st.write(f"- 학생 이름: {st.session_state.user_name}")
+    st.write(f"- 학습 단원: {st.session_state.sel_sem} {st.session_state.sel_unit}")
+    st.info("리포트는 선생님께서 읽으시는 용도입니다. 수고했어!")
+    if st.button("처음으로 돌아가기"):
         st.session_state.clear()
         st.rerun()
+
 
