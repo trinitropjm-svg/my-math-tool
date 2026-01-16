@@ -9,7 +9,7 @@ import json
 # [1] 선생님 필수 설정
 # =========================
 # ※ 주의: 여기에 선생님의 실제 API 키를 정확히 입력해 주세요.
-API_KEY = "AIzaSyBsxvpd_PBZXG1vzM0rdKmZAsc7hZoS0F0".strip()
+API_KEY = "AIzaSyChQxUSqXF6jJ7fDpESBXl4gW9wdp86Waw".strip()
 TEACHER_PASSWORD = "1234" 
 
 # =========================
@@ -182,3 +182,4 @@ if st.session_state.step == "test":
                 next_q = f"자, 다음 문제! Q{st.session_state.q_idx+1}. {st.session_state.questions[st.session_state.q_idx]['q']}"
                 st.session_state.messages.append({"role": "assistant", "content": next_q})
         st.rerun()
+
